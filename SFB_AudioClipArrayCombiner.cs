@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using UnityEngine;
 using System.Collections.Generic;
@@ -24,28 +24,57 @@ public class SFB_AudioClipArrayCombiner : MonoBehaviour {
     [ContextMenu("Export now")]
     void SaveNow()
     {
-		int totalLayers		= audioLayers.Length;
-		int totalClips		= 0;
-		int totalExports	= 1;
-
-		for(int i = 0; i < totalLayers; i++)
+		// Find total number of exports
+		int totalExports	= 1;												// Start at 1...
+		for(int n = 0; n < audioLayers.Length; n++)
 		{
-			totalClips 		+= audioLayers[i].clip.Length;
-			totalExports 	*= audioLayers [i].clip.Length;
+			totalExports 	*= audioLayers [n].clip.Length;						// Multiply by the number of clips in each layer
 		}
 
-		Debug.Log ("Total Layers / Clips / Exports: " + totalLayers + " / " + totalClips + " / " + totalExports);
+		string[] combinations;													// Start an array of all combinations
+		combinations = new string[totalExports];								// Set the number of entries to the number of exports
 
-		// TO DO:
-		// Create an array that has every combination possible.
-		// I'm thinking a String[] with a comma dilimitaor, such as "0,0,0", "0,3,1", "3,2,0,1,4" etc.
-		// Then "SaveClip" (* Needs to be modified), can be called for each entry in String[]
-		// Explode can be used to get the ID# for the clip to use in each layer.
+		// Reset the onClip value for each layer
+		for (int r = 0; r < audioLayers.Length; r++) {
+			audioLayers[r].onClip = 0;
+		}
+			
+		for (int l = 0; l < audioLayers.Length; l++) {							// For each layer...
+			int exportsLeft = 1;												// Start at 1...
+			for(int i = l; i < audioLayers.Length; i++)							// For each layer left in the list (don't compute those we've already done)
+			{
+				exportsLeft 	*= audioLayers [i].clip.Length;					// Find out how many exports are left if it were just those layers
+			}
 
-		// WHAT I DO NOT KNOW:
-		// I'm not sure how to get every combination, with an arbitrary number of layers and clips per layer.
+			int entriesPerValue = exportsLeft / audioLayers [l].clip.Length;	// Compute how many entires per value, if the total entries were exportsLeft
+			int entryCount = 0;													// Set entryCount to 0
 
-        //Save(outputName, audioLayers);
+			for (int e = 0; e < combinations.Length; e++) {						// For all combinations
+				if (l != 0)														// If this isn't the first layer
+					combinations [e] = combinations [e] + ",";					// Append a "," to the String
+				combinations [e] = combinations [e] + audioLayers [l].onClip;	// Append the "onClip" value to the string
+				entryCount++;													// increase entryCount
+				if (entryCount >= entriesPerValue) {							// if we've done all the entires for that "onClip" value...
+					audioLayers [l].onClip++;									// increase onClip by 1
+					entryCount = 0;												// Reset entryCount
+					if (audioLayers [l].onClip >= audioLayers [l].clip.Length)	// if we've also run out of clips for this layer
+						audioLayers [l].onClip = 0;								// Reset onClip count
+				}
+			}
+		}
+
+		int number = 0;															// for the file name
+		// For each combination, save a .wav file with those clip numbers.
+		foreach(var combination in combinations)
+		{
+			// TO DO:
+			// * Explode the string into an array of clip numbers
+			// * Call the actual save code using those clips
+			Debug.Log (combination);
+			string[] clipsAsString	= combination.Split ("," [0]);
+			SaveClip(outputName, number, clipsAsString, audioLayers);
+			number++;
+		}
     }
 
     const int HEADER_SIZE = 44;
@@ -66,36 +95,35 @@ public class SFB_AudioClipArrayCombiner : MonoBehaviour {
         [HideInInspector]
         public int sampleCount;
         [HideInInspector]
-        public int delayCount;
+		public int delayCount;
+		public int onClip = 0;
 
 		public void GetSamples(int clipNumber)
         {
-            samples =  GetSamplesFromClip(clip[clipNumber], volume);
+			samples =  GetSamplesFromClip(clip[clipNumber], volume);
 			delayCount = (int)(delay * clip[clipNumber].frequency * clip[clipNumber].channels);
             sampleCount = delayCount + samples.Length;
         }
     }
 
-	public static bool SaveClip(string filename, AudioLayer[] audioLayers, int layerNumber, int clipNumber, int exportNumber)
+	public static bool SaveClip(string filename, int exportNumber, string[] clipsAsString, AudioLayer[] audioLayers)
 	{
-		if (filename.Length <= 0)
-			filename = "OutputAudio" + exportNumber;
-		else {
-			filename = filename + "" + exportNumber;
+		Debug.Log ("Doing Export " + exportNumber);
+		if (filename.Length <= 0)															// If the name hasn't been set
+			filename = "CombinedAudio" + exportNumber;										// Use a default name
+		else {																				// else
+			filename = filename + "_" + exportNumber;										// Use the chosen name plus the number
 		}
-		if (!filename.ToLower().EndsWith(".wav"))
-		{
-			filename += ".wav";
-		}
+		filename += ".wav";																	// add the .wav extension
 
-		var filepath	= "Assets/SFBayStudios/Exported Audio Files/" + filename;
+		var filepath	= "Assets/SFBayStudios/Exported Audio Files/" + filename;			// Set the file path
 
 		// Make sure directory exists if user is saving to sub dir.
 		Directory.CreateDirectory(Path.GetDirectoryName(filepath));
 
-		using (var fileStream = CreateEmpty(filepath))
+		using (var fileStream = CreateEmpty(filepath))										// Create an empty file
 		{
-			int sampleCount = ConvertAndWrite(fileStream, audioLayers);
+			int sampleCount = ConvertAndWrite(fileStream, clipsAsString, audioLayers);
 
 			//	 ClIP NUMBER CHANGE HERE
 			WriteHeader(fileStream, audioLayers[0].clip[0], sampleCount);
@@ -104,66 +132,39 @@ public class SFB_AudioClipArrayCombiner : MonoBehaviour {
 		return true; // TODO: return false if there's a failure saving the file
 	}
 
-    public static bool Save(string filename, AudioLayer[] audioLayers)
+	static int ConvertAndWrite(FileStream fileStream, String[] clipsAsString, AudioLayer[] audioLayers)
     {
-        if (filename.Length <= 0)
-            filename = "OutputAudio";
-        if (!filename.ToLower().EndsWith(".wav"))
-        {
-            filename += ".wav";
-        }
+        int mostSamples = 0;																// Set this to 0
 
-		//var filepath = Path.Combine(Application.dataPath + "/SFBayStudios/Exported Audio Files/", filename);
-		var filepath	= "Assets/SFBayStudios/Exported Audio Files/" + filename;
-        Debug.Log(filepath);
-
-        // Make sure directory exists if user is saving to sub dir.
-        Directory.CreateDirectory(Path.GetDirectoryName(filepath));
-
-        using (var fileStream = CreateEmpty(filepath))
-        {
-
-            int sampleCount = ConvertAndWrite(fileStream, audioLayers);
-
-			//	 ClIP NUMBER CHANGE HERE
-            WriteHeader(fileStream, audioLayers[0].clip[0], sampleCount);
-        }
-		AssetDatabase.ImportAsset(filepath);
-        return true; // TODO: return false if there's a failure saving the file
-    }
-
-    static int ConvertAndWrite(FileStream fileStream, AudioLayer[] audioLayers)
-    {
-        int mostSamples = 0;
-
-        foreach(var audioLayer in audioLayers)
-        {
-            if (!audioLayer.record)
-                continue;
-            audioLayer.GetSamples(0);
-            mostSamples = Mathf.Max(mostSamples, audioLayer.sampleCount);
-        }
+		for (int c = 0; c < audioLayers.Length; c++) {										// For each Layer
+			int clipNumber = int.Parse(clipsAsString[c]);									// Get the clip number as an int
+			if (!audioLayers[c].record)														// If we are not recording this
+				continue;																	// Then skip it
+			audioLayers[c].GetSamples(clipNumber);											// Run this function from the class
+			mostSamples = Mathf.Max(mostSamples, audioLayers[c].sampleCount);				// Set mostSamples to the greatest one
+		}
         
-        Int16[] finalSamples = new Int16[mostSamples];
+        Int16[] finalSamples = new Int16[mostSamples];										// The exported clip will have the mostSamples
         Debug.Log("Most sample: " + mostSamples);
-        for(int i = 0; i < mostSamples; i++)
+        for(int i = 0; i < mostSamples; i++)												// for each sample
         {
-            float sampleValue = 0;
-            int sampleCount = 0;
+            float sampleValue = 0;															// Set variable for exported clip
+            int sampleCount = 0;															// Set variable
 
-            foreach (var audioLayer in audioLayers)
+            foreach (var audioLayer in audioLayers)											// For each layer....
             {
-                if (!audioLayer.record)
-                    continue;
-                if(i > audioLayer.delayCount && i < audioLayer.sampleCount)
+                if (!audioLayer.record)														// if we aren't recording...
+                    continue;																// then skip it.
+                if(i > audioLayer.delayCount && i < audioLayer.sampleCount)					// if we are not in the delay range and we are under the samplecount for the clip
                 {
+					// Add the value from this layer to the final (sampleValue)
                     sampleValue += (audioLayer.samples[i - audioLayer.delayCount] / rescaleFactor);
                     sampleCount++;
                 }
             }
             
-            if(sampleCount!=0)
-                sampleValue /= sampleCount;
+			if(sampleCount!=0)																// If we have done some samples (keep from dividing by 0)
+                sampleValue /= sampleCount;													// compute sampleValue
             finalSamples[i] = (short)(sampleValue * rescaleFactor);
         }
 
@@ -190,16 +191,21 @@ public class SFB_AudioClipArrayCombiner : MonoBehaviour {
 
     static Int16[] GetSamplesFromClip(AudioClip clip, float volume = 1)
     {
+		Debug.Log ("Getting Samples from clip " + clip.name);
         var samples = new float[clip.samples * clip.channels];
+		Debug.Log ("Samples: " + samples.Length);
 
         clip.GetData(samples, 0);
 
         Int16[] intData = new Int16[samples.Length];
         
+		Int16 positiveInt = 0;
         for (int i = 0; i < samples.Length; i++)
         {
             intData[i] = (short)(samples[i] * volume * rescaleFactor);
+			positiveInt += intData [i];
         }
+		Debug.Log ("positiveInt: " + positiveInt);
         return intData;
     }
 
