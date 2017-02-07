@@ -7,3 +7,5 @@ POSSIBLE IMPROVEMENTS
 * Get the Array function to work, so that the script will export every possible variation of the clips & layers.
 
 **Feel Free to Add Your Own Ideas**
+
+Also, Please visit http://www.InfinityPBR.com and check out the AAA quality PBR charaters I have available for Unity & Unreal
